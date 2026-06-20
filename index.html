@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"/>
+<title>読む — Yomu N5</title>
+<meta name="description" content="Lecturas japonesas N5 con vocabulario Genki L1-12"/>
+<meta name="theme-color" content="#F8F4EE"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<meta name="apple-mobile-web-app-title" content="読む Yomu"/>
+<link rel="manifest" href="manifest.json"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:#F8F4EE;color:#1C1A16;font-family:'Inter',sans-serif}
+.jp{font-family:'Noto Sans JP',sans-serif}
+button{cursor:pointer;border:none;background:none;color:inherit;font-family:inherit}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#CCCCCC;border-radius:2px}
+ruby{ruby-align:center}rt{display:block;text-align:center;font-family:'Noto Sans JP',sans-serif}
+textarea{font-family:monospace}
+input{font-family:'Inter',sans-serif}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ── COLORS ──────────────────────────────────────────────
+const C={
+  bg:"#F8F4EE",card:"#FFFFFF",card2:"#EEE9DF",card3:"#E6E1D6",
+  border:"#D9D3C5",ink:"#1C1A16",sub:"#7A7468",
+  accent:"#B83232",teal:"#1A6E8E",tealBg:"rgba(26,110,142,0.12)",
+  purple:"#6D28D9",purpleBg:"rgba(109,40,217,0.10)",
+  gold:"#9E5A00",green:"#2A6B45",greenBg:"rgba(42,107,69,0.12)",
+  redBg:"rgba(184,50,50,0.09)",
+};
+
+// ── STORAGE ──────────────────────────────────────────────
+function sget(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch{return null}}
+function sset(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
+
+// ── STATE ────────────────────────────────────────────────
+let state={
+  view:'home',       // home | story | cards
+  story:null,
+  tab:'read',        // read | vocab | grammar | quiz
+  deck: sget('yomu-deck')||[],
+  prog: sget('yomu-prog')||{xp:0,done:{}},
+  showFuri:false,
+  selected: new Map(), // key -> {jp,r,es}
+  showExport:false,
+  quizAnswers:{},
+  quizSubmitted:false,
+  vocabQ:'',
+  gramOpen:null,
+  exportDone:false,
+};
+
+function setState(patch){Object.assign(state,patch);render();}
+
+// ── LEVEL ────────────────────────────────────────────────
+function lvl(xp){return{l:Math.floor(xp/200)+1,pct:Math.min(100,Math.round((xp%200)/2))};}
+
+// ── ICONS (SVG inline) ───────────────────────────────────
+const SVG=(p,path)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${p||16}" height="${p||16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+const ICO={
+  back:   SVG(20,'<polyline points="15 18 9 12 15 6"/>'),
+  layers: SVG(14,'<polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>'),
+  flame:  SVG(13,'<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>'),
+  star:   SVG(14,'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/>'),
+  plus:   SVG(14,'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>'),
+  check:  SVG(14,'<polyline points="20 6 9 17 4 12"/>'),
+  x:      SVG(18,'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'),
+  xsm:    SVG(14,'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'),
+  eye:    SVG(12,'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'),
+  eyeoff: SVG(12,'<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'),
+  book:   SVG(14,'<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>'),
+  dl:     SVG(16,'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>'),
+  trash:  SVG(16,'<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>'),
+  xcircle:SVG(14,'<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'),
+};
+
+// ── ANKI EXPORT ──────────────────────────────────────────
+function buildAnki(deck){
+  const lines=['#separator:tab','#html:false','#deck:Yomu N5','#notetype:Basic',''];
+  deck.forEach(c=>{
+    const back=c.r&&c.r!==c.jp?`${c.r} — ${c.es}`:c.es;
+    lines.push(`${c.jp}\t${back}`);
+  });
+  return lines.join('\n');
+}
+function doExport(){
+  const content=buildAnki(state.deck);
+  try{
+    const blob=new Blob([content],{type:'text/plain;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='yomu-anki.txt';
+    document.body.appendChild(a);a.click();
+    document.body.removeChild(a);URL.revokeObjectURL(url);
+    setState({exportDone:true});
+    setTimeout(()=>setState({exportDone:false}),3000);
+    return;
+  }catch(e){}
+  // Share fallback
+  if(navigator.share){navigator.share({title:'Yomu Anki',text:content}).catch(()=>{});}
+}
+
+// ── CARD OPS ─────────────────────────────────────────────
+function addCard(w){
+  if(state.deck.find(c=>c.jp===w.jp))return;
+  const deck=[...state.deck,{...w,id:`${w.jp}-${Date.now()}`}];
+  sset('yomu-deck',deck);setState({deck});
+}
+function removeCard(id){
+  const deck=state.deck.filter(c=>c.id!==id);
+  sset('yomu-deck',deck);setState({deck});
+}
+
+// ── SEGMENT TAP ──────────────────────────────────────────
+function tapSeg(info,pI,sI,wI){
+  const key=`${pI}-${sI}-${wI}`;
+  const next=new Map(state.selected);
+  next.has(key)?next.delete(key):next.set(key,info);
+  setState({selected:next});
+}
+function clearSel(){setState({selected:new Map()});}
+
+// ── QUIZ ─────────────────────────────────────────────────
+function answerQuiz(i,oi){
+  if(state.quizSubmitted)return;
+  setState({quizAnswers:{...state.quizAnswers,[i]:oi}});
+}
+function submitQuiz(){setState({quizSubmitted:true});}
+function finishQuiz(){
+  const s=state.story;
+  const score=s.quiz.reduce((a,q,i)=>a+(state.quizAnswers[i]===q.correct?1:0),0);
+  const prog={xp:state.prog.xp+100,done:{...state.prog.done,[s.id]:{score,total:s.quiz.length}}};
+  sset('yomu-prog',prog);
+  setState({prog,view:'home',story:null,quizAnswers:{},quizSubmitted:false});
+}
+
+// ── VOCAB from paragraphs ────────────────────────────────
+function buildVocab(paragraphs){
+  const seen=new Set(),list=[];
+  paragraphs.forEach(para=>para.forEach(sent=>sent.forEach(([t,r,m,ty])=>{
+    if(ty!=='x'&&ty!=='p'&&m&&!seen.has(t)){seen.add(t);list.push({jp:t,r:r||t,es:m});}
+  })));
+  return list;
+}
+
+// ── HTML BUILDER ─────────────────────────────────────────
+function h(tag,attrs,...children){
+  const el=document.createElement(tag);
+  if(attrs)Object.entries(attrs).forEach(([k,v])=>{
+    if(k==='style'&&typeof v==='object'){Object.assign(el.style,v);}
+    else if(k==='className'){el.className=v;}
+    else if(k==='htmlFor'){el.htmlFor=v;}
+    else if(k.startsWith('on')){el.addEventListener(k.slice(2).toLowerCase(),v);}
+    else if(k==='innerHTML'){el.innerHTML=v;}
+    else if(k==='value'){el.value=v;}
+    else if(k==='readOnly'){el.readOnly=v;}
+    else if(k==='placeholder'){el.placeholder=v;}
+    else if(k==='id'){el.id=v;}
+    else if(k==='ref'){v(el);}
+    else el.setAttribute(k,v);
+  });
+  children.flat(Infinity).forEach(c=>{
+    if(c==null||c===false||c===undefined)return;
+    el.appendChild(typeof c==='string'?document.createTextNode(c):c);
+  });
+  return el;
+}
+function div(a,...c){return h('div',a,...c);}
+function span(a,...c){return h('span',a,...c);}
+function btn(a,...c){return h('button',a,...c);}
+function p(a,...c){return h('p',a,...c);}
+function icon(svg){const d=span({});d.innerHTML=svg;return d.firstChild;}
+
+// ── RENDER SEGMENT ───────────────────────────────────────
+function renderSeg(text,reading,ty,isSelected,showFuri,onTap){
+  if(ty==='x'){
+    return span({style:{color:C.border,fontFamily:"'Noto Sans JP',sans-serif"}},text);
+  }
+  const isNm=ty==='n', isPt=ty==='p';
+  const txtColor=isNm?C.purple:isPt?'#666':C.ink;
+  const ulColor=isNm?C.purple:isPt?C.border:C.teal;
+  const ulStyle=isPt?`1px dotted ${C.border}`:`1.5px solid ${ulColor}`;
+  const st={
+    cursor:'pointer',padding:'0 1px',borderRadius:'2px',transition:'background .1s',
+    fontFamily:"'Noto Sans JP',sans-serif",
+    color:isSelected?'#fff':txtColor,
+    background:isSelected?(isNm?C.purpleBg:C.tealBg):'transparent',
+    borderBottom:isSelected?`2px solid ${isNm?C.purple:C.teal}`:ulStyle,
+  };
+  if(reading&&reading!==''&&showFuri){
+    const ruby=document.createElement('ruby');
+    Object.assign(ruby.style,{...st,display:'inline ruby'});
+    ruby.appendChild(document.createTextNode(text));
+    const rt=document.createElement('rt');
+    rt.style.cssText=`font-size:0.48em;color:${isSelected?C.teal:isNm?C.purple:'#4a6a7a'};font-family:'Noto Sans JP',sans-serif;letter-spacing:0`;
+    rt.textContent=reading;
+    ruby.appendChild(rt);
+    ruby.addEventListener('click',e=>{e.stopPropagation();onTap();});
+    return ruby;
+  }
+  const s=span({style:st},text);
+  s.addEventListener('click',e=>{e.stopPropagation();onTap();});
+  return s;
+}
+
+// ── RENDER PARAGRAPH ─────────────────────────────────────
+function renderPara(sentences,paraIdx,showFuri,selected,onTap,lh){
+  const pg=h('p',{style:{margin:'0 0 22px 0',lineHeight:String(lh),fontSize:'20px',fontFamily:"'Noto Sans JP',sans-serif",fontWeight:'400',color:C.ink,letterSpacing:'0.02em'}});
+  sentences.forEach((segs,si)=>{
+    segs.forEach(([text,reading,meaning,type],wi)=>{
+      const key=`${paraIdx}-${si}-${wi}`;
+      const isSel=selected.has(key);
+      const seg=renderSeg(text,reading||'',type||'k',isSel,showFuri,()=>{
+        onTap({jp:text,r:reading||text,es:meaning||'(sin definición)'},paraIdx,si,wi);
+      });
+      pg.appendChild(seg);
+    });
+    pg.appendChild(document.createTextNode(' '));
+  });
+  return pg;
+}
+
+// ── PILL BUTTON ──────────────────────────────────────────
+function pill(label,onClick,active,extra){
+  return btn({
+    style:{display:'inline-flex',alignItems:'center',gap:'6px',padding:'8px 16px',borderRadius:'999px',
+      fontSize:'13px',fontWeight:'600',transition:'all .15s',cursor:'pointer',
+      background:active?'#fff':'transparent',color:active?C.bg:C.sub,
+      border:`1px solid ${active?'#fff':C.border}`,
+      ...(extra||{})},
+    onClick
+  },...(Array.isArray(label)?label:[label]));
+}
+
+// ── HEADER ───────────────────────────────────────────────
+function renderHeader(){
+  const {l,pct}=lvl(state.prog.xp);
+  const left=div({style:{display:'flex',alignItems:'center',gap:'12px'}});
+  if(state.view!=='home'){
+    const backBtn=btn({style:{color:C.sub,padding:'4px',display:'flex',cursor:'pointer'},
+      onClick:()=>setState({view:'home',story:null,selected:new Map(),quizAnswers:{},quizSubmitted:false})});
+    backBtn.innerHTML=ICO.back;
+    left.appendChild(backBtn);
+  }
+  const logo=span({className:'jp',style:{fontSize:'20px',fontWeight:'900',color:C.accent,letterSpacing:'3px'}},'読む');
+  const sub=span({style:{fontSize:'11px',color:'#444'}},'Genki L1-12');
+  left.append(logo,sub);
+
+  const right=div({style:{display:'flex',alignItems:'center',gap:'12px'}});
+  // Level
+  const lvlWrap=div({style:{display:'flex',alignItems:'center',gap:'7px'}});
+  const flameEl=span({});flameEl.innerHTML=ICO.flame;flameEl.firstChild.style.color=C.gold;
+  const lvlText=div({style:{fontSize:'11px',fontWeight:'700'}});
+  const bar=div({style:{width:'48px',height:'3px',background:C.card3,borderRadius:'2px',marginTop:'3px',overflow:'hidden'}});
+  const fill=div({style:{width:`${pct}%`,height:'100%',background:C.gold,transition:'width .4s'}});
+  bar.appendChild(fill);
+  lvlText.innerHTML=`Lv.${l}`;
+  lvlText.appendChild(bar);
+  lvlWrap.append(flameEl,lvlText);
+
+  // Cards button
+  const cardCount=state.deck.length;
+  const cardsLabel=[icon(ICO.layers),' Tarjetas'];
+  if(cardCount>0){
+    const badge=span({style:{background:C.accent,color:'#fff',borderRadius:'999px',padding:'1px 7px',fontSize:'11px',marginLeft:'2px'}},String(cardCount));
+    cardsLabel.push(badge);
+  }
+  const cardsBtn=btn({
+    style:{display:'inline-flex',alignItems:'center',gap:'6px',padding:'7px 13px',borderRadius:'999px',
+      fontSize:'13px',fontWeight:'600',transition:'all .15s',cursor:'pointer',
+      background:state.view==='cards'?'#fff':C.card2,
+      color:state.view==='cards'?C.bg:C.sub,
+      border:`1px solid ${C.border}`},
+    onClick:()=>setState({view:'cards',selected:new Map()})
+  },...cardsLabel);
+
+  right.append(lvlWrap,cardsBtn);
+
+  const inner=div({style:{maxWidth:'680px',margin:'0 auto',padding:'13px 18px',display:'flex',alignItems:'center',justifyContent:'space-between'}});
+  inner.append(left,right);
+  const hdr=h('header',{style:{background:C.bg,borderBottom:`1px solid ${C.border}`,boxShadow:'0 1px 3px rgba(0,0,0,0.08)',position:'sticky',top:'0',zIndex:'50'}});
+  hdr.appendChild(inner);
+  return hdr;
+}
+
+// ── HOME VIEW ─────────────────────────────────────────────
+function renderHome(){
+  const wrap=div({style:{padding:'0'}});
+  const title=h('h1',{style:{fontSize:'20px',fontWeight:'700',marginBottom:'8px'}},'Lecturas N5');
+  const sub=p({style:{fontSize:'13px',color:C.sub,lineHeight:'1.8',marginBottom:'26px'}});
+  sub.innerHTML=`Vocabulario y gramática de <strong style="color:${C.ink}">Genki I, lecciones 1-12</strong>.<br>Toca cualquier palabra para ver su significado. <span style="color:${C.purple}">Púrpura</span> = nombres. <span style="color:${C.teal}">Azul</span> = vocabulario.`;
+  wrap.append(title,sub);
+  const grid=div({style:{display:'grid',gap:'11px'}});
+  STORIES.forEach((s,i)=>{
+    const done=state.prog.done[s.id];
+    const card=btn({
+      style:{textAlign:'left',background:C.card,border:`1px solid ${done?C.gold:C.border}`,borderRadius:'14px',padding:'18px 20px',display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'12px',width:'100%',cursor:'pointer'},
+      onClick:()=>setState({view:'story',story:s,tab:'read',showFuri:false,selected:new Map(),quizAnswers:{},quizSubmitted:false})
+    });
+    const left=div({});
+    const badge=div({style:{fontSize:'10px',fontWeight:'700',color:C.accent,marginBottom:'7px',letterSpacing:'1.5px'}},`N5 — 読み物 ${i+1}`);
+    const stitle=div({className:'jp',style:{fontSize:'19px',fontWeight:'700',marginBottom:'4px'}},s.title);
+    const ssub=div({style:{fontSize:'12px',color:C.sub}},s.subtitle);
+    left.append(badge,stitle,ssub);
+    const right=div({style:{flexShrink:'0',marginTop:'2px'}});
+    if(done){
+      right.innerHTML=`<span style="color:${C.green};font-weight:700;font-size:12px;display:flex;align-items:center;gap:4px">${ICO.check} ${done.score}/${done.total}</span>`;
+    } else {
+      right.innerHTML=`<span style="color:${C.sub};font-size:12px">+100 XP</span>`;
+    }
+    card.append(left,right);
+    grid.appendChild(card);
+  });
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+// ── STORY VIEW ────────────────────────────────────────────
+function renderStory(){
+  const s=state.story;
+  const wrap=div({});
+  // title
+  const hd=div({style:{marginBottom:'20px'}});
+  hd.append(
+    div({style:{fontSize:'10px',color:C.accent,fontWeight:'700',letterSpacing:'1.5px',marginBottom:'7px'}},s.titleReading),
+    h('h1',{className:'jp',style:{fontSize:'23px',fontWeight:'900',marginBottom:'4px'}},s.title),
+    p({style:{fontSize:'12px',color:C.sub}},s.subtitle)
+  );
+  // tabs
+  const tabs=div({style:{display:'flex',gap:'6px',marginBottom:'20px',overflowX:'auto',paddingBottom:'2px'}});
+  [{id:'read',lbl:'本文'},{id:'vocab',lbl:'単語'},{id:'grammar',lbl:'文法'},{id:'quiz',lbl:'クイズ'}].forEach(t=>{
+    const active=state.tab===t.id;
+    const tb=btn({
+      className:'jp',
+      style:{whiteSpace:'nowrap',padding:'7px 16px',borderRadius:'999px',cursor:'pointer',transition:'all .15s',
+        border:`1px solid ${active?'#fff':C.border}`,background:active?'#fff':'transparent',
+        color:active?C.bg:C.sub,fontSize:'14px',fontWeight:active?'700':'400'},
+      onClick:()=>setState({tab:t.id})
+    },t.lbl);
+    tabs.appendChild(tb);
+  });
+  wrap.append(hd,tabs);
+  if(state.tab==='read') wrap.appendChild(renderReadTab(s));
+  if(state.tab==='vocab') wrap.appendChild(renderVocabTab(s));
+  if(state.tab==='grammar') wrap.appendChild(renderGrammarTab(s));
+  if(state.tab==='quiz') wrap.appendChild(renderQuizTab(s));
+  return wrap;
+}
+
+// ── READ TAB ─────────────────────────────────────────────
+function renderReadTab(s){
+  const lh=state.showFuri?2.9:2.1;
+  const wrap=div({});
+  // furi toggle
+  const toggle=div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',background:C.card2,borderRadius:'11px',padding:'10px 14px',marginBottom:'18px',border:`1px solid ${C.border}`}});
+  toggle.appendChild(span({style:{fontSize:'12px',color:C.sub}},state.showFuri?'Furigana visible':'Toca cualquier palabra para ver su significado'));
+  const furiBtn=btn({
+    style:{display:'flex',alignItems:'center',gap:'5px',background:state.showFuri?C.teal:C.card3,color:state.showFuri?'#fff':C.sub,borderRadius:'999px',padding:'5px 12px',fontSize:'12px',fontWeight:'700',transition:'all .2s',cursor:'pointer'},
+    onClick:e=>{e.stopPropagation();setState({showFuri:!state.showFuri});}
+  });
+  furiBtn.innerHTML=(state.showFuri?ICO.eye+' ON':ICO.eyeoff+' OFF');
+  toggle.appendChild(furiBtn);
+  wrap.appendChild(toggle);
+  // paragraphs
+  const textWrap=div({onClick:e=>{if(e.target===textWrap)clearSel();}});
+  s.paragraphs.forEach((para,pi)=>{
+    textWrap.appendChild(renderPara(para,pi,state.showFuri,state.selected,(info,pI,sI,wI)=>tapSeg(info,pI,sI,wI),lh));
+  });
+  wrap.appendChild(textWrap);
+  // quiz button
+  const done=state.prog.done[s.id];
+  const qBtn=btn({
+    style:{display:'flex',alignItems:'center',gap:'6px',padding:'11px 24px',borderRadius:'999px',fontSize:'14px',fontWeight:'700',cursor:'pointer',background:done?C.green:C.accent,color:'#fff',marginTop:'8px',float:'right'},
+    onClick:()=>setState({tab:'quiz'})
+  });
+  qBtn.innerHTML=(done?'Repetir quiz':'Hacer quiz')+' '+ICO.star;
+  wrap.appendChild(qBtn);
+  return wrap;
+}
+
+// ── VOCAB TAB ────────────────────────────────────────────
+function renderVocabTab(s){
+  const vocab=buildVocab(s.paragraphs);
+  const wrap=div({});
+  const searchRow=div({style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px'}});
+  const inp=h('input',{type:'text',placeholder:'Buscar...',style:{flex:'1',background:C.card2,border:`1px solid ${C.border}`,borderRadius:'10px',padding:'9px 13px',fontSize:'13px',color:C.ink,outline:'none'}});
+  inp.value=state.vocabQ||'';
+  const countEl=span({style:{fontSize:'12px',color:C.sub,whiteSpace:'nowrap'}});
+  searchRow.append(inp,countEl);
+  wrap.appendChild(searchRow);
+  const grid=div({style:{display:'grid',gap:'8px'}});
+  const update=()=>{
+    const q=inp.value.toLowerCase();
+    const list=q?vocab.filter(v=>v.jp.includes(inp.value)||v.r.includes(inp.value)||v.es.toLowerCase().includes(q)):vocab;
+    countEl.textContent=String(list.length);
+    grid.innerHTML='';
+    list.forEach(v=>{
+      const inDk=state.deck.some(c=>c.jp===v.jp);
+      const row=div({style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:'11px',padding:'11px 15px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px'}});
+      const left=div({style:{minWidth:'0'}});
+      const topRow=div({style:{display:'flex',alignItems:'baseline',gap:'8px',marginBottom:'3px'}});
+      topRow.append(span({className:'jp',style:{fontSize:'18px',fontWeight:'700'}},v.jp),span({style:{fontSize:'11px',color:C.teal}},v.r));
+      left.append(topRow,div({style:{fontSize:'12px',color:C.sub,lineHeight:'1.5'}},v.es));
+      const ab=btn({
+        style:{background:inDk?C.greenBg:C.redBg,color:inDk?C.green:C.accent,borderRadius:'999px',width:'33px',height:'33px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:'0',border:'none',cursor:inDk?'default':'pointer'},
+        onClick:()=>{if(!inDk){addCard(v);update();}}
+      });
+      ab.innerHTML=inDk?ICO.check:ICO.plus;
+      row.append(left,ab);
+      grid.appendChild(row);
+    });
+  };
+  inp.addEventListener('input',update);
+  wrap.appendChild(grid);
+  update();
+  return wrap;
+}
+
+// ── GRAMMAR TAB ──────────────────────────────────────────
+function renderGrammarTab(s){
+  const wrap=div({style:{display:'grid',gap:'9px'}});
+  wrap.appendChild(p({style:{fontSize:'12px',color:C.sub,marginBottom:'4px'}},`${s.grammar.length} puntos — toca para expandir`));
+  s.grammar.forEach((g,i)=>{
+    const isOpen=state.gramOpen===i;
+    const card=div({style:{background:C.card,border:`1px solid ${isOpen?C.teal:C.border}`,borderRadius:'12px',overflow:'hidden',transition:'border .2s'}});
+    const hdr=btn({
+      style:{width:'100%',textAlign:'left',padding:'13px 15px',display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'},
+      onClick:()=>setState({gramOpen:isOpen?null:i})
+    });
+    hdr.append(
+      span({style:{fontWeight:'700',color:isOpen?C.teal:C.ink,fontSize:'13px',lineHeight:'1.4',paddingRight:'10px'}},g.point),
+      span({style:{color:C.sub,fontSize:'20px',flexShrink:'0',fontWeight:'300'}},isOpen?'−':'+')
+    );
+    card.appendChild(hdr);
+    if(isOpen){
+      const body=div({style:{padding:'0 15px 16px'}});
+      body.append(
+        p({style:{fontSize:'13px',color:C.sub,lineHeight:'1.8',marginBottom:'12px',whiteSpace:'pre-line'}},g.explain),
+        div({style:{fontSize:'13px',background:C.card2,borderRadius:'9px',padding:'12px 14px',color:C.ink,lineHeight:'2.1',whiteSpace:'pre-line',fontFamily:"'Noto Sans JP',sans-serif"}},g.example)
+      );
+      card.appendChild(body);
+    }
+    wrap.appendChild(card);
+  });
+  return wrap;
+}
+
+// ── QUIZ TAB ─────────────────────────────────────────────
+function renderQuizTab(s){
+  const wrap=div({style:{display:'grid',gap:'13px'}});
+  const allDone=Object.keys(state.quizAnswers).length===s.quiz.length;
+  s.quiz.forEach((q,i)=>{
+    const card=div({style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:'13px',padding:'15px 17px'}});
+    card.appendChild(p({style:{fontWeight:'600',fontSize:'14px',marginBottom:'11px',color:C.ink,lineHeight:'1.5'}},`${i+1}. ${q.q}`));
+    const opts=div({style:{display:'grid',gap:'7px'}});
+    q.options.forEach((opt,oi)=>{
+      const sel=state.quizAnswers[i]===oi;
+      let bg='transparent',border=C.border,col=C.sub;
+      if(state.quizSubmitted){
+        if(oi===q.correct){bg=C.greenBg;border=C.green;col=C.green;}
+        else if(sel){bg=C.redBg;border=C.accent;col=C.accent;}
+      } else if(sel){bg=C.tealBg;border=C.teal;col=C.teal;}
+      const ob=btn({
+        style:{textAlign:'left',border:`1px solid ${border}`,background:bg,color:col,borderRadius:'9px',padding:'10px 13px',fontSize:'13px',display:'flex',justifyContent:'space-between',alignItems:'center',transition:'all .15s',cursor:state.quizSubmitted?'default':'pointer',width:'100%'},
+        onClick:()=>answerQuiz(i,oi)
+      },opt);
+      if(state.quizSubmitted&&oi===q.correct){const ic=span({});ic.innerHTML=ICO.check;ob.appendChild(ic);}
+      if(state.quizSubmitted&&sel&&oi!==q.correct){const ic=span({});ic.innerHTML=ICO.xcircle;ob.appendChild(ic);}
+      opts.appendChild(ob);
+    });
+    card.appendChild(opts);
+    wrap.appendChild(card);
+  });
+  // action row
+  const ar=div({style:{display:'flex',justifyContent:'flex-end',gap:'11px',alignItems:'center',marginTop:'4px'}});
+  if(!state.quizSubmitted){
+    const rb=btn({
+      style:{display:'inline-flex',alignItems:'center',gap:'6px',padding:'11px 24px',borderRadius:'999px',fontSize:'14px',fontWeight:'700',cursor:allDone?'pointer':'default',background:allDone?C.accent:C.card2,color:allDone?'#fff':C.sub},
+      onClick:()=>{if(allDone)submitQuiz();}
+    },'Revisar');
+    ar.appendChild(rb);
+  } else {
+    const score=s.quiz.reduce((a,q,i)=>a+(state.quizAnswers[i]===q.correct?1:0),0);
+    ar.append(
+      span({style:{fontWeight:'700',fontSize:'15px',color:C.ink}},`${score}/${s.quiz.length}`),
+      btn({
+        style:{display:'inline-flex',alignItems:'center',gap:'6px',padding:'11px 24px',borderRadius:'999px',fontSize:'14px',fontWeight:'700',background:C.teal,color:'#fff',cursor:'pointer'},
+        onClick:finishQuiz
+      },'+100 XP')
+    );
+  }
+  wrap.appendChild(ar);
+  return wrap;
+}
+
+// ── CARDS VIEW ───────────────────────────────────────────
+function renderCards(){
+  const wrap=div({});
+  if(!state.deck.length){
+    const empty=div({style:{textAlign:'center',padding:'70px 20px'}});
+    empty.innerHTML=`<div style="color:${C.border};margin-bottom:14px">${SVG(34,'<polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>')}</div>`;
+    empty.appendChild(p({style:{color:C.sub,fontSize:'14px',lineHeight:'1.75'}},'Aún no tienes tarjetas.'));
+    empty.appendChild(p({style:{color:C.sub,fontSize:'14px'}},'Toca palabras en las lecturas para guardarlas aquí.'));
+    wrap.appendChild(empty);
+    return wrap;
+  }
+  // header
+  const hd=div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}});
+  hd.appendChild(h('h2',{style:{fontSize:'17px',fontWeight:'700'}},`Mis tarjetas (${state.deck.length})`));
+  const expBtn=btn({
+    style:{display:'inline-flex',alignItems:'center',gap:'6px',padding:'8px 16px',borderRadius:'999px',fontSize:'13px',fontWeight:'700',background:state.exportDone?C.green:C.teal,color:'#fff',cursor:'pointer',transition:'background .3s'},
+    onClick:doExport
+  });
+  expBtn.innerHTML=ICO.dl+(state.exportDone?' ¡Descargado!':' Exportar a Anki');
+  hd.appendChild(expBtn);
+  wrap.appendChild(hd);
+  // instructions
+  const info=div({style:{background:C.card2,border:`1px solid ${C.border}`,borderRadius:'11px',padding:'12px 16px',marginBottom:'16px'}});
+  info.innerHTML=`<p style="font-size:12px;color:${C.sub};line-height:1.8"><strong style="color:${C.ink}">Cómo importar en Anki:</strong><br><strong style="color:${C.teal}">1.</strong> Toca <strong style="color:${C.ink}">Exportar a Anki</strong> — se descarga <code style="color:${C.teal}">yomu-anki.txt</code><br><strong style="color:${C.teal}">2.</strong> Anki: <strong style="color:${C.ink}">Archivo → Importar</strong>, tipo: Básico, separador: Tab<br><strong style="color:${C.teal}">3.</strong> Elige tu mazo. ¡Listo!</p>`;
+  wrap.appendChild(info);
+  // list
+  const grid=div({style:{display:'grid',gap:'8px'}});
+  state.deck.forEach(c=>{
+    const row=div({style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:'11px',padding:'11px 15px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px'}});
+    const left=div({style:{minWidth:'0',flex:'1'}});
+    const top=div({style:{display:'flex',alignItems:'baseline',gap:'9px',marginBottom:'3px'}});
+    top.append(span({className:'jp',style:{fontSize:'18px',fontWeight:'700'}},c.jp));
+    if(c.r&&c.r!==c.jp) top.appendChild(span({style:{fontSize:'11px',color:C.teal}},c.r));
+    left.append(top,div({style:{fontSize:'12px',color:C.sub,lineHeight:'1.4'}},c.es));
+    const del=btn({style:{color:'#444',padding:'6px',flexShrink:'0',display:'flex',cursor:'pointer'},onClick:()=>removeCard(c.id)});
+    del.innerHTML=ICO.trash;
+    row.append(left,del);
+    grid.appendChild(row);
+  });
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+// ── SELECTION PANEL ──────────────────────────────────────
+function renderSelPanel(){
+  const selList=Array.from(state.selected.values());
+  if(!selList.length||state.view!=='story'||state.tab!=='read')return null;
+  const panel=div({
+    style:{position:'fixed',bottom:'0',left:'0',right:'0',zIndex:'100',background:C.bg,borderTop:`1px solid ${C.border}`,borderRadius:'20px 20px 0 0',boxShadow:'0 -4px 16px rgba(0,0,0,0.12)',paddingBottom:'36px',maxHeight:'60vh',overflowY:'auto'},
+    onClick:e=>e.stopPropagation()
+  });
+  const handle=div({style:{display:'flex',justifyContent:'center',padding:'10px 0 4px'}});
+  handle.appendChild(div({style:{width:'40px',height:'4px',borderRadius:'2px',background:C.border}}));
+  const hdr=div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 18px 10px'}});
+  hdr.appendChild(span({style:{fontSize:'12px',fontWeight:'700',color:C.teal}},`${selList.length} ${selList.length>1?'palabras':'palabra'}`));
+  const btns=div({style:{display:'flex',gap:'8px',alignItems:'center'}});
+  if(selList.length>1){
+    const saveAll=btn({
+      style:{background:C.teal,color:'#fff',borderRadius:'999px',padding:'5px 14px',fontSize:'12px',fontWeight:'700',display:'flex',alignItems:'center',gap:'5px',cursor:'pointer'},
+      onClick:()=>{selList.forEach(w=>addCard(w));clearSel();}
+    });
+    saveAll.innerHTML=ICO.plus+' Guardar todas';
+    btns.appendChild(saveAll);
+  }
+  const closeBtn=btn({style:{color:C.sub,padding:'4px',display:'flex',cursor:'pointer'},onClick:clearSel});
+  closeBtn.innerHTML=ICO.x;
+  btns.appendChild(closeBtn);
+  hdr.appendChild(btns);
+  panel.append(handle,hdr);
+  const cards=div({style:{padding:'0 14px',display:'grid',gap:'10px'}});
+  selList.forEach(w=>{
+    const isGram=w.es&&(w.es.includes('→')||w.es.includes('forma')||w.es.includes('+ '));
+    const isPt=w.es&&w.es.includes('partícula');
+    const typeLabel=isPt?'Partícula':isGram?'Gramática':'Vocabulario';
+    const typeCl=isPt?'#6B9FAF':isGram?C.purple:C.teal;
+    const inDk=state.deck.some(c=>c.jp===w.jp);
+    const card=div({style:{background:C.card,borderRadius:'14px',padding:'14px 16px',border:`1px solid ${C.border}`}});
+    const badge=span({style:{fontSize:'11px',fontWeight:'700',background:typeCl+'22',color:typeCl,borderRadius:'999px',padding:'2px 10px',display:'inline-block'}},typeLabel);
+    const wordRow=div({style:{display:'flex',alignItems:'baseline',gap:'12px',margin:'8px 0 6px'}});
+    wordRow.appendChild(span({className:'jp',style:{fontSize:'26px',fontWeight:'700',color:C.ink}},w.jp));
+    if(w.r&&w.r!==w.jp) wordRow.appendChild(span({style:{fontSize:'13px',color:typeCl}},w.r));
+    const def=div({style:{fontSize:'13px',color:'#999',lineHeight:'1.7'}},w.es);
+    const saveRow=div({style:{display:'flex',justifyContent:'flex-end',marginTop:'10px'}});
+    const saveBtn=btn({
+      style:{background:'transparent',color:inDk?C.green:C.teal,border:`1px solid ${inDk?C.green:C.teal}`,borderRadius:'999px',padding:'5px 14px',fontSize:'12px',fontWeight:'700',display:'flex',alignItems:'center',gap:'5px',cursor:inDk?'default':'pointer'},
+      onClick:()=>{if(!inDk){addCard(w);render();}}
+    });
+    saveBtn.innerHTML=inDk?ICO.check+' Guardada':ICO.book+' Guardar';
+    saveRow.appendChild(saveBtn);
+    card.append(badge,wordRow,def,saveRow);
+    cards.appendChild(card);
+  });
+  panel.appendChild(cards);
+  return panel;
+}
+
+// ── MAIN RENDER ──────────────────────────────────────────
+function render(){
+  const app=document.getElementById('app');
+  app.innerHTML='';
+  app.style.background=C.bg;
+  app.style.minHeight='100vh';
+  app.style.color=C.ink;
+  const main=div({style:{maxWidth:'680px',margin:'0 auto',padding:'24px 18px',background:C.bg,minHeight:'calc(100vh - 50px)',paddingBottom:Array.from(state.selected.values()).length>0&&state.tab==='read'&&state.view==='story'?'220px':'80px'},onClick:()=>{if(state.selected.size>0)clearSel();}});
+  if(state.view==='home') main.appendChild(renderHome());
+  if(state.view==='story'&&state.story) main.appendChild(renderStory());
+  if(state.view==='cards') main.appendChild(renderCards());
+  app.append(renderHeader(),main);
+  const panel=renderSelPanel();
+  if(panel) app.appendChild(panel);
+}
+</script>
+<script>
+const STORIES = [
+{
+  id:"s1",
+  title:"引越しの日",
+  titleReading:"ひっこしのひ",
+  subtitle:"El día de la mudanza",
+  paragraphs:[
+    [
+      [
+        ["たけしさん",null,"Takeshi — personaje: estudiante universitario de 20 años","n"],
+        ["の",null,"partícula de posesión — 'de' (Genki L1)","p"],
+        ["家族","かぞく","familia (Genki L3)","k"],
+        ["は",null,"partícula de tema — anuncia de quién se habla (Genki L1)","p"],
+        ["今日","きょう","hoy (Genki L2)","k"],
+        ["、",null,null,"x"],
+        ["新しい","あたらしい","nuevo/a — adjetivo -i (Genki L5)","k"],
+        ["アパート",null,"apartamento","k"],
+        ["に",null,"partícula de destino — hacia dónde se muda la familia (Genki L3)","p"],
+        ["引越します","ひっこします","se muda — 引越す (mudarse) + します (presente educado) (Genki L3)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["新しい","あたらしい","nuevo/a (Genki L5)","k"],
+        ["アパート",null,"apartamento","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["東京","とうきょう","Tokio","n"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["大学","だいがく","universidad (Genki L1)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["近く","ちかく","cerca / las cercanías (Genki L4)","k"],
+        ["に",null,"partícula de lugar con あります (Genki L4)","p"],
+        ["あります",null,"hay / existe — para cosas (Genki L4)","g"],
+        ["。",null,null,"x"],
+        ["駅","えき","estación de tren (Genki L2)","k"],
+        ["も",null,"también — partícula que añade información (Genki L1)","p"],
+        ["近くて","ちかくて","está cerca y... — 近い forma -te (conecta adjetivos) (Genki L6)","g"],
+        ["、",null,null,"x"],
+        ["公園","こうえん","parque (Genki L2)","k"],
+        ["も",null,"también (Genki L1)","p"],
+        ["あります",null,"hay (Genki L4)","g"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["たけしさん",null,"Takeshi","n"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["朝","あさ","mañana (parte del día) (Genki L3)","k"],
+        ["から",null,"desde — punto de inicio temporal (Genki L2)","p"],
+        ["家族","かぞく","familia (Genki L3)","k"],
+        ["と",null,"con — partícula de compañía (Genki L4)","p"],
+        ["一緒に","いっしょに","juntos (Genki L5)","k"],
+        ["荷物","にもつ","equipaje / bultos / pertenencias (Genki L5)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["運んでいます","はこんでいます","está cargando — 運ぶ (cargar/transportar) + ている (acción en progreso) (Genki L7)","g"],
+        ["。",null,null,"x"],
+      ],
+    ],
+    [
+      [
+        ["新しい","あたらしい","nuevo/a (Genki L5)","k"],
+        ["部屋","へや","habitación / cuarto (Genki L2)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["前の","まえの","el/la anterior — 前 (antes/anterior) (Genki L4)","k"],
+        ["アパート",null,"apartamento","k"],
+        ["より",null,"que — marca el elemento inferior en la comparación (Genki L10)","p"],
+        ["大きくて","おおきくて","más grande y... — 大きい forma -te (conecta adjetivos) (Genki L6)","g"],
+        ["、",null,null,"x"],
+        ["明るい","あかるい","luminoso / claro — adjetivo -i (Genki L5)","k"],
+        ["です",null,"es (cópula educada) (Genki L1)","g"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["お母さん","おかあさん","mamá — forma honorífica (Genki L7)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["台所","だいどころ","cocina (Genki L7)","k"],
+        ["が",null,"partícula de sujeto — con 広い el sujeto va con が (Genki L3)","p"],
+        ["広くて","ひろくて","espacioso/a y... — 広い (amplio) forma -te (Genki L6)","g"],
+        ["、",null,null,"x"],
+        ["とても",null,"muy / bastante (Genki L5)","p"],
+        ["喜んでいます","よろこんでいます","está contenta — 喜ぶ (alegrarse) + ている (estado actual) (Genki L7)","g"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["この","この","este/esta — demostrativo antes de sustantivo (Genki L2)","k"],
+        ["台所","だいどころ","cocina (Genki L7)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["本当に","ほんとうに","de verdad / realmente (Genki L6)","k"],
+        ["使いやすい","つかいやすい","fácil de usar — 使う (usar) + やすい (fácil de ~) (Genki L10)","g"],
+        ["ですね","ですね","¿verdad? / ¿no? — です + ね (busca acuerdo) (Genki L5)","g"],
+        ["！",null,null,"x"],
+        ["毎日","まいにち","todos los días (Genki L3)","k"],
+        ["料理","りょうり","cocina / platillo (Genki L7)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["作りたいです","つくりたいです","quiero cocinar — 作る (hacer/cocinar) + たい (deseo) + です (Genki L11)","g"],
+        ["！」",null,null,"x"],
+      ],
+    ],
+    [
+      [
+        ["荷物","にもつ","pertenencias / bultos (Genki L5)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["運んでいると","はこんでいると","mientras cargaban — 運ぶ + ている + と (cuando X ocurre, Y) (Genki L7)","g"],
+        ["、",null,null,"x"],
+        ["隣","となり","al lado / el vecino (Genki L4)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["田村さん","たむらさん","la señora Tamura — vecina del edificio (さん = honorífico)","n"],
+        ["が",null,"partícula de sujeto (Genki L3)","p"],
+        ["出てきました","でてきました","salió — 出てくる (salir hacia acá) + ました (pasado) (Genki L6)","g"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["はじめまして",null,"mucho gusto — saludo de primer encuentro (Genki L1)","k"],
+        ["。",null,null,"x"],
+        ["田村","たむら","Tamura — apellido de la vecina","n"],
+        ["と",null,"partícula de cita — se llama... (Genki L4)","p"],
+        ["申します","もうします","me llamo — 申す (decir, forma humilde) + します — presentación muy educada (Genki L1)","g"],
+        ["。",null,null,"x"],
+        ["どうぞよろしく",null,"mucho gusto / por favor trátenos bien (Genki L1)","k"],
+        ["お願いします","おねがいします","por favor (Genki L2)","k"],
+        ["」",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["こちらこそ",null,"igualmente / yo también — respuesta a un saludo o agradecimiento","k"],
+        ["。",null,null,"x"],
+        ["たけしと","たけしと","Takeshi — 'me llamo Takeshi y...'","n"],
+        ["申します","もうします","me llamo (forma humilde) (Genki L1)","g"],
+        ["。",null,null,"x"],
+        ["このアパート","このアぱーと","este apartamento — この + アパート (Genki L2)","g"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["静か","しずか","tranquilo/a — adjetivo -na (Genki L5)","k"],
+        ["ですか？」",null,"¿es? — cópula + か (pregunta) (Genki L1)","g"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["はい",null,"sí (forma educada) (Genki L1)","k"],
+        ["、",null,null,"x"],
+        ["とても",null,"muy (Genki L5)","p"],
+        ["静か","しずか","tranquilo (Genki L5)","k"],
+        ["ですよ","ですよ","es, ¿sabes? — です + よ (énfasis informativo) (Genki L5)","g"],
+        ["。",null,null,"x"],
+        ["近く","ちかく","cerca / las cercanías (Genki L4)","k"],
+        ["に",null,"partícula de lugar con あります (Genki L4)","p"],
+        ["おいしい",null,"delicioso/a (Genki L5)","k"],
+        ["スーパー",null,"supermercado","k"],
+        ["も",null,"también (Genki L1)","p"],
+        ["ありますし","ありますし","hay también, y además — あります + し (enumera razones) (Genki L9)","g"],
+        ["、",null,null,"x"],
+        ["便利","べんり","conveniente / práctico — adjetivo -na (Genki L5)","k"],
+        ["ですよ",null,"es, ¿sabes? (énfasis) (Genki L5)","g"],
+        ["」",null,null,"x"],
+      ],
+    ],
+    [
+      [
+        ["午後","ごご","tarde / pm (Genki L1)","k"],
+        ["、",null,null,"x"],
+        ["家族","かぞく","familia (Genki L3)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["部屋","へや","habitación (Genki L2)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["片付け","かたづけ","organización / limpieza — 片付ける (organizar) forma sustantiva (Genki L9)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["しています","しています","están haciendo — する + ている (acción en progreso) (Genki L7)","g"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["たけしさん",null,"Takeshi","n"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["自分","じぶん","uno mismo / propio — pronombre reflexivo (Genki L8)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["部屋","へや","habitación (Genki L2)","k"],
+        ["に",null,"partícula de lugar (Genki L3)","p"],
+        ["机","つくえ","escritorio (Genki L2)","k"],
+        ["と",null,"y — une dos objetos (Genki L4)","p"],
+        ["本棚","ほんだな","estantería de libros — 本 (libro) + 棚 (estante) (Genki L2)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["置きました","おきました","puso / colocó — 置く (poner/colocar) + ました (pasado educado) (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["机","つくえ","escritorio (Genki L2)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["上","うえ","encima / arriba — palabra de lugar (Genki L4)","k"],
+        ["に",null,"partícula de lugar (Genki L4)","p"],
+        ["教科書","きょうかしょ","libro de texto — 教科 (materia) + 書 (libro) (Genki L2)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["並べてから","ならべてから","después de alinear — 並べる (alinear/ordenar) + てから (después de hacer X) (Genki L9)","g"],
+        ["、",null,null,"x"],
+        ["「",null,null,"x"],
+        ["これでいい","これでいい","'con esto está bien' — これ (esto) + で (con/mediante) + いい (está bien) (Genki L5)","g"],
+        ["」と",null,null,"x"],
+        ["つぶやきました","つぶやきました","murmuró — つぶやく (murmurar) + ました (pasado) (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["お父さん","おとうさん","papá — forma honorífica (Genki L7)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["説明書","せつめいしょ","manual de instrucciones — 説明 (explicación) + 書 (escrito) (Genki L8)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["読みながら","よみながら","mientras lee — 読む (leer) + ながら (acción simultánea) (Genki L12)","g"],
+        ["、",null,null,"x"],
+        ["棚","たな","estante / mueble (Genki L2)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["組み立てています","くみたてています","está ensamblando — 組み立てる (ensamblar) + ている (en progreso) (Genki L7)","g"],
+        ["。",null,null,"x"],
+      ],
+    ],
+    [
+      [
+        ["夜","よる","noche (Genki L4)","k"],
+        ["、",null,null,"x"],
+        ["家族","かぞく","familia (Genki L3)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["新しい","あたらしい","nuevo/a (Genki L5)","k"],
+        ["家","いえ","casa / hogar (Genki L2)","k"],
+        ["での",null,"en — で (lugar) + の (posesión) (Genki L3)","p"],
+        ["最初","さいしょ","el primero / el primer (Genki L9)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["夜","よる","noche (Genki L4)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["迎えました","むかえました","llegó / se presentó (la noche) — 迎える (recibir/dar la bienvenida) + ました (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["料理","りょうり","cocina / platillo (Genki L7)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["道具","どうぐ","utensilios / herramientas (Genki L8)","k"],
+        ["がまだ","がまだ","todavía no — が (sujeto) + まだ (todavía) (Genki L9)","g"],
+        ["片付いていない","かたづいていない","no están organizados — 片付く (organizarse) + ていない (estado negativo) (Genki L7)","g"],
+        ["ので",null,"porque / ya que — razón formal (Genki L12)","p"],
+        ["、",null,null,"x"],
+        ["今夜","こんや","esta noche","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["ピザを頼みました","ぴざをたのみました","pidieron pizza — ピザ (pizza) + を + 頼む (pedir) + ました (Genki L4)","g"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["この","この","este/esta (Genki L2)","k"],
+        ["町","まち","barrio / ciudad / pueblo (Genki L8)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["生活","せいかつ","vida cotidiana / forma de vivir (Genki L12)","k"],
+        ["が",null,"partícula de sujeto (Genki L3)","p"],
+        ["楽しみです","たのしみです","estoy emocionado/a — 楽しみ (algo a lo que esperar con ilusión) + です (Genki L11)","g"],
+        ["ね","ね","¿verdad? — partícula que busca acuerdo (Genki L1)","p"],
+        ["」と",null,null,"x"],
+        ["お母さん","おかあさん","mamá (Genki L7)","k"],
+        ["が",null,"partícula de sujeto (Genki L3)","p"],
+        ["言いました","いいました","dijo — 言う + ました (pasado) (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["そうですね","そうですね","es verdad, ¿no? — acuerdo + ね (Genki L2)","k"],
+        ["。",null,null,"x"],
+        ["ここで","ここで","aquí — ここ (aquí) + で (lugar de acción) (Genki L2)","k"],
+        ["新しい","あたらしい","nuevo/a (Genki L5)","k"],
+        ["生活","せいかつ","vida cotidiana (Genki L12)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["始めましょう","はじめましょう","¡empecemos! — 始める (empezar) + ましょう (propuesta de acción conjunta) (Genki L5)","g"],
+        ["！」と",null,null,"x"],
+        ["たけしさん","たけしさん","Takeshi (さん = honorífico)","n"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["笑顔","えがお","sonrisa — 笑 (reír) + 顔 (cara) (Genki L5)","k"],
+        ["で",null,"con — partícula de medio o modo (Genki L3)","p"],
+        ["言いました","いいました","dijo (pasado) (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+    ],
+  ],
+  grammar:[
+    {point:"XよりYの方が — comparación (L10)",
+     explain:"X より Y の方が + adjetivo = Y es más~ que X.\nより marca el elemento inferior. の方が marca el superior.",
+     example:"新しい部屋は前のアパートより大きいです。\n→ La nueva habitación es más grande que el anterior apartamento."},
+    {point:"～やすい / ～にくい — fácil/difícil de hacer (L10)",
+     explain:"Stem del verbo (forma ます sin ます) + やすい = fácil de hacer X.\n+ にくい = difícil de hacer X. Se conjugan como adjetivos -i.",
+     example:"この台所は使いやすいです。→ Esta cocina es fácil de usar."},
+    {point:"～てから — después de hacer X (L9)",
+     explain:"Te-form + から. La segunda acción ocurre necesariamente después de completar la primera.",
+     example:"教科書を並べてから、勉強を始めました。\n→ Después de ordenar los libros, empezó a estudiar."},
+    {point:"～ながら — mientras hace X al mismo tiempo (L12)",
+     explain:"Stem (ます sin ます) + ながら + verbo principal. La acción con ながら es la secundaria o de fondo.",
+     example:"説明書を読みながら、棚を組み立てています。\n→ Está ensamblando el mueble mientras lee el manual."},
+    {point:"～ので — porque / ya que (razón formal) (L12)",
+     explain:"Forma corta + ので. Da una razón de forma objetiva y educada. Más formal que から.",
+     example:"道具がまだ片付いていないので、ピザを頼みました。\n→ Como los utensilios todavía no están organizados, pidieron pizza."},
+    {point:"～ましょう / ～ましょうか (L5/L6)",
+     explain:"ましょう = Hagamos X (propuesta). ましょうか = ¿Hacemos X? (oferta o propuesta con pregunta).",
+     example:"新しい生活を始めましょう！→ ¡Empecemos la nueva vida!\n料理を作りましょうか？→ ¿Hacemos comida?"},
+    {point:"～ています — acción en progreso o estado (L7)",
+     explain:"Te-form + います. (1) acción ocurriendo ahora, (2) estado habitual, (3) resultado que persiste.",
+     example:"家族は荷物を運んでいます。→ La familia está cargando los bultos.\nお母さんは喜んでいます。→ Mamá está contenta (resultado)."},
+    {point:"～にくい / 自分 / 片付ける — notas de vocabulario clave",
+     explain:"自分 (じぶん) = uno mismo / propio. 片付ける (かたづける) = organizar/ordenar. 組み立てる (くみたてる) = ensamblar.",
+     example:"自分の部屋を片付けました。→ Organizó su propia habitación."},
+  ],
+  quiz:[
+    {q:"¿Por qué le gusta el nuevo apartamento a la mamá?",options:["Tiene un jardín grande","La cocina es espaciosa","Está cerca de la escuela","Tiene más habitaciones"],correct:1},
+    {q:"¿Qué hace el papá mientras lee el manual?",options:["Cocina","Arregla el coche","Ensambla un mueble","Habla por teléfono"],correct:2},
+    {q:"¿Quién salió a saludar a la familia?",options:["Un estudiante","El dueño del edificio","La vecina de al lado","Un repartidor"],correct:2},
+    {q:"¿Qué comen en su primera noche en el nuevo apartamento?",options:["Comida japonesa casera","Ramen","Pizza","Sushi"],correct:2},
+    {q:"¿Cuál de estas afirmaciones es correcta sobre el nuevo apartamento?",options:["Está lejos de la estación","Es más pequeño que el anterior","Hay un parque cerca","No hay supermercado cerca"],correct:2},
+  ],
+},
+{
+  id:"s2",
+  title:"夏祭り",
+  titleReading:"なつまつり",
+  subtitle:"La primera vez de Mary en un festival de verano",
+  paragraphs:[
+    [
+      [
+        ["八月","はちがつ","agosto (Genki L4)","k"],
+        ["の","の","partícula de posesión (Genki L1)","p"],
+        ["ある","ある","un cierto / un determinado — 'ある + sustantivo' (Genki L9)","k"],
+        ["土曜日","どようび","sábado (Genki L4)","k"],
+        ["の","の","partícula de posesión (Genki L1)","p"],
+        ["夕方","ゆうがた","la tarde al caer el sol / atardecer (Genki L4)","k"],
+        ["、",null,null,"x"],
+        ["メアリーさん","めありーさん","Mary (さん = honorífico)","n"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["けんとさん","けんとさん","Kento (さん = honorífico)","n"],
+        ["と",null,"con — partícula de compañía (Genki L4)","p"],
+        ["さくらさん","さくらさん","Sakura (さん = honorífico)","n"],
+        ["と",null,"y / con (Genki L4)","p"],
+        ["一緒に","いっしょに","juntos (Genki L5)","k"],
+        ["夏祭り","なつまつり","festival de verano — 夏 (verano) + 祭り (festival) (Genki L11)","k"],
+        ["に",null,"partícula de destino (Genki L3)","p"],
+        ["行きました","いきました","fueron — 行く + ました (pasado) (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["メアリーさん","めありーさん","Mary (さん = honorífico)","n"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["日本","にほん","Japón","n"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["夏祭り","なつまつり","festival de verano (Genki L11)","k"],
+        ["に",null,"partícula de lugar (Genki L3)","p"],
+        ["行ったことが","いったことが","haber ido — 行く forma pasada + ことが (experiencia) (Genki L11)","g"],
+        ["ありませんでした","ありませんでした","no tenía esa experiencia — ことがない en pasado educado (Genki L11)","g"],
+        ["。",null,null,"x"],
+        ["だから",null,"por eso / así que — conjunción casual (Genki L9)","k"],
+        ["、",null,null,"x"],
+        ["とても",null,"muy (Genki L5)","p"],
+        ["楽しみにしていました","たのしみにしていました","lo había estado esperando con ilusión — 楽しみにする + ていた (estado habitual pasado) (Genki L11)","g"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["公園","こうえん","parque (Genki L2)","k"],
+        ["に","に","partícula de lugar (Genki L3)","p"],
+        ["着くと","つくと","al llegar — 着く (llegar) + と (cuando X, Y de forma natural) (Genki L5)","g"],
+        ["、",null,null,"x"],
+        ["たくさん",null,"muchos / mucho (Genki L4)","p"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["屋台","やたい","puesto de comida —典型的な夏祭りの食べ物を売る露店 (Genki L11)","k"],
+        ["が",null,"partícula de sujeto (Genki L3)","p"],
+        ["並んでいました","ならんでいました","estaban alineados — 並ぶ (alinearse) + ていた (estado pasado) (Genki L7)","g"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["太鼓","たいこ","tambor japonés (instrumento)","k"],
+        ["の","の","partícula de posesión (Genki L1)","p"],
+        ["音","おと","sonido (Genki L8)","k"],
+        ["が","が","partícula de sujeto (Genki L3)","p"],
+        ["聞こえて","きこえて","se oye / se escucha — 聞こえる (poder escuchar) forma -te (Genki L8)","g"],
+        ["、",null,null,"x"],
+        ["浴衣","ゆかた","yukata — kimono informal de verano (Genki L11)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["着た","きた","que lleva puesto — 着る (ponerse ropa) forma pasada como modificador (Genki L9)","g"],
+        ["人","ひと","personas (Genki L1)","k"],
+        ["たちが",null,"plural — た + ちが (personas) (Genki L7)","g"],
+        ["歩いていました","あるいていました","estaban caminando — 歩く + ていた (pasado progresivo) (Genki L7)","g"],
+        ["。",null,null,"x"],
+      ],
+    ],
+    [
+      [
+        ["「",null,null,"x"],
+        ["わあ","わあ","¡vaya! / ¡guau! — exclamación de sorpresa o alegría","k"],
+        ["！",null,null,"x"],
+        ["すごい","すごい","increíble / impresionante — adjetivo -i (Genki L5)","k"],
+        ["ですね","ですね","¿verdad? — です + ね (busca acuerdo) (Genki L5)","g"],
+        ["！",null,null,"x"],
+        ["あの","あの","aquel/aquella — demostrativo lejano (Genki L2)","k"],
+        ["食べ物","たべもの","comida / alimentos — 食べ (comer) + 物 (cosa) (Genki L5)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["何","なん","qué (Genki L1)","k"],
+        ["ですか？」とメアリーさんは","とメアリーさんは","— と (cita) + personaje + は (tema)","g"],
+        ["聞きました","ききました","preguntó — 聞く + ました (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["たこ焼き","たこやき","takoyaki — bolas de masa con pulpo, típico de Osaka (Genki L11)","k"],
+        ["と",null,"y — une dos elementos (Genki L4)","p"],
+        ["焼きそば","やきそば","yakisoba — fideos fritos, comida típica de festival (Genki L11)","k"],
+        ["ですよ","ですよ","es, ¿sabes? — énfasis informativo (Genki L5)","g"],
+        ["。",null,null,"x"],
+        ["夏祭り","なつまつり","festival de verano (Genki L11)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["定番","ていばん","lo clásico / lo de siempre — 'el favorito de siempre'","k"],
+        ["です","です","es (cópula) (Genki L1)","g"],
+        ["！」とさくらさんが","とさくらさんが","— と (cita) + Sakura + が (sujeto)","g"],
+        ["教えてくれました","おしえてくれました","le explicó — 教える (enseñar) + てくれる (alguien hace algo por ti) + ました (Genki L12)","g"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["どれも","どれも","todos / cada uno — どれ (cuál) + も (también/todo) (Genki L8)","k"],
+        ["食べてみたいです","たべてみたいです","quiero probar a comer (todo) — 食べる + てみたい (querer intentar algo nuevo) + です (Genki L11)","g"],
+        ["！",null,null,"x"],
+        ["何から","なにから","¿por cuál empezamos? — 何 (qué) + から (desde) (Genki L2)","k"],
+        ["食べましょうか？」","たべましょうか","¿qué comemos primero? — 食べる + ましょうか (propuesta) (Genki L6)","g"],
+      ],
+      [
+        ["三人","さんにん","los tres (Genki L7)","k"],
+        ["はまず",null,"primero / antes que nada — まず (Genki L9)","g"],
+        ["たこ焼き","たこやき","takoyaki (Genki L11)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["注文しました","ちゅうもんしました","ordenaron — 注文する (ordenar) + ました (Genki L6)","k"],
+        ["。",null,null,"x"],
+        ["メアリーさん","めありーさん","Mary (さん = honorífico)","n"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["たこ焼き","たこやき","takoyaki (Genki L11)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["食べたことがなかった","たべたことがなかった","nunca había comido — 食べる forma pasada + ことがない pasado (Genki L11)","g"],
+        ["ので",null,"porque / ya que (formal) (Genki L12)","p"],
+        ["、",null,null,"x"],
+        ["少し","すこし","un poco (Genki L7)","k"],
+        ["緊張しました","きんちょうしました","se puso nerviosa — 緊張する (ponerse nervioso/a) + ました (Genki L6)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["熱い","あつい","caliente — adjetivo -i (Genki L5)","k"],
+        ["！",null,null,"x"],
+        ["でも",null,"pero (Genki L3)","p"],
+        ["おいしい","おいしい","delicioso/a (Genki L5)","k"],
+        ["！",null,null,"x"],
+        ["中","なか","interior / dentro — 中にタコが入っています (Genki L4)","k"],
+        ["に",null,"partícula de lugar (Genki L4)","p"],
+        ["タコ",null,"pulpo","k"],
+        ["が",null,"partícula de sujeto (Genki L3)","p"],
+        ["入っているんですね","はいっているんですね","está dentro, ¿no? — 入る + ている + んですね (explicación + acuerdo) (Genki L12)","g"],
+        ["！」",null,null,"x"],
+      ],
+    ],
+    [
+      [
+        ["食べた後","たべたあと","después de comer — 食べる forma pasada + 後 (después) (Genki L9)","g"],
+        ["、",null,null,"x"],
+        ["三人","さんにん","los tres (Genki L7)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["金魚すくい","きんぎょすくい","pesca de peces de colores — juego clásico de festival japonés (Genki L11)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["しました","しました","hicieron — する + ました (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["金魚すくい","きんぎょすくい","pesca de peces de colores (Genki L11)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["したことがありますか？」",null,"¿has jugado alguna vez? — したことがある (experiencia) + か (Genki L11)","g"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["いいえ","いいえ","no (formal) (Genki L1)","k"],
+        ["、",null,null,"x"],
+        ["一度も","いちども","ni una sola vez — 一度 (una vez) + も (con negación) (Genki L11)","k"],
+        ["ありません","ありません","no tengo esa experiencia — ことがない educado (Genki L11)","g"],
+        ["。",null,null,"x"],
+        ["でも",null,"pero (Genki L3)","p"],
+        ["やってみたいです","やってみたいです","quiero probarlo — やる (hacer/intentar) + てみたい (querer intentar) + です (Genki L11)","g"],
+        ["！」",null,null,"x"],
+        ["と",null,"partícula de cita (Genki L4)","p"],
+        ["メアリーさん","めありーさん","Mary (さん = honorífico)","n"],
+        ["が",null,"partícula de sujeto (Genki L3)","p"],
+        ["答えました","こたえました","respondió (pasado educado) (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["けんとさん","けんとさん","Kento (さん = honorífico)","n"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["子供","こども","niño/a (Genki L7)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["時","とき","cuando / el momento en que (Genki L9)","k"],
+        ["から",null,"desde — punto de inicio temporal (Genki L2)","p"],
+        ["金魚すくい","きんぎょすくい","pesca de peces de colores (Genki L11)","k"],
+        ["が",null,"partícula de sujeto con 上手 (Genki L3)","p"],
+        ["上手で","じょうずで","es hábil y... — 上手 (adj.-na hábil) forma -de (Genki L6)","g"],
+        ["、",null,null,"x"],
+        ["三匹","さんびき","tres peces — 匹 es el contador para animales pequeños (Genki L7)","k"],
+        ["も","も","incluso / nada menos que — expresión de cantidad sorprendente (Genki L1)","p"],
+        ["すくいました","すくいました","pescó (en el juego) — すくう (pescar con red) + ました (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+    ],
+    [
+      [
+        ["その日","そのひ","ese día — その (ese) + 日 (día) (Genki L2)","k"],
+        ["、",null,null,"x"],
+        ["さくらさん","さくらさん","Sakura (さん = honorífico)","n"],
+        ["と",null,"y / con (Genki L4)","p"],
+        ["メアリーさん","めありーさん","Mary (さん = honorífico)","n"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["浴衣","ゆかた","yukata — kimono informal de verano (Genki L11)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["着ていました","きていました","llevaban puesto — 着る (ponerse ropa) + ていた (estado pasado) (Genki L7)","g"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["メアリーさん","めありーさん","Mary (さん = honorífico)","n"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["浴衣","ゆかた","yukata (Genki L11)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["着るのが","きるのが","el acto de ponerse (ropa) — 着る + の (nominalización del verbo) + が (sujeto) (Genki L8)","g"],
+        ["初めてで","はじめてで","era por primera vez y... — 初めて (por primera vez) + で (forma -te del adjetivo) (Genki L6)","g"],
+        ["、",null,null,"x"],
+        ["「",null,null,"x"],
+        ["歩きにくい","あるきにくい","es difícil caminar — 歩く + にくい (difícil de hacer X) (Genki L10)","g"],
+        ["！",null,null,"x"],
+        ["でも",null,"pero (Genki L3)","p"],
+        ["きれいですね","きれいですね","está bonita ¿verdad? — きれい (adj.-na bonito) + ですね (Genki L5)","g"],
+        ["」と",null,null,"x"],
+        ["笑いました","わらいました","se rió — 笑う + ました (pasado) (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["お祭り","おまつり","festival — お (prefijo honorífico) + 祭り (festival) (Genki L11)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["人","ひと","persona / gente (Genki L1)","k"],
+        ["たちが",null,"partícula plural — persona + たち (Genki L7)","g"],
+        ["「",null,null,"x"],
+        ["浴衣","ゆかた","yukata (Genki L11)","k"],
+        ["が","が","partícula de sujeto (Genki L3)","p"],
+        ["よく","よく","bien / a menudo (Genki L3)","k"],
+        ["似合っています","にあっています","te queda bien — 似合う (quedar bien/sentar bien la ropa) + ています (estado) (Genki L7)","g"],
+        ["ね","ね","¿verdad? (Genki L1)","p"],
+        ["！」と",null,null,"x"],
+        ["声をかけてくれました","こえをかけてくれました","les dijeron — 声をかける (dirigirse a alguien) + てくれる (alguien hace algo por ti) + ました (Genki L12)","g"],
+        ["。",null,null,"x"],
+      ],
+    ],
+    [
+      [
+        ["夜","よる","noche (Genki L4)","k"],
+        ["になると","になると","cuando se hizo de noche — に (tiempo) + なる (convertirse en) + と (cuando, condicional natural) (Genki L10)","g"],
+        ["、",null,null,"x"],
+        ["花火","はなび","fuegos artificiales — 花 (flor) + 火 (fuego) (Genki L11)","k"],
+        ["大会","たいかい","gran evento / competencia — aquí: el festival de fuegos artificiales","k"],
+        ["が",null,"partícula de sujeto (Genki L3)","p"],
+        ["始まりました","はじまりました","empezó — 始まる (empezar algo) + ました (pasado) (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["わあ","わあ","¡guau! — exclamación de asombro","k"],
+        ["！",null,null,"x"],
+        ["きれい","きれい","hermoso/a — adjetivo -na (Genki L5)","k"],
+        ["！",null,null,"x"],
+        ["こんなに","こんなに","así de / tan — こんな (este tipo de) + に (adverbio) (Genki L8)","k"],
+        ["大きい","おおきい","grande (Genki L5)","k"],
+        ["花火","はなび","fuegos artificiales (Genki L11)","k"],
+        ["を",null,"partícula de objeto directo (Genki L3)","p"],
+        ["見たことがありませんでした","みたことがありませんでした","nunca había visto — 見る forma pasada + ことがない pasado (Genki L11)","g"],
+        ["！」",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["日本","にほん","Japón","n"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["花火","はなび","fuegos artificiales (Genki L11)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["世界一","せかいいち","el mejor del mundo — 世界 (mundo) + 一 (número uno) (Genki L10)","k"],
+        ["だと","だと","que es — だ (cópula informal) + と (cita) (Genki L9)","g"],
+        ["思います","おもいます","pienso / creo — 思う (pensar) + ます (Genki L9)","k"],
+        ["よ","よ","¿sabes? — partícula de énfasis informativo (Genki L1)","p"],
+        ["」とけんとさんが","とけんとさんが","— と (cita) + Kento + が (sujeto)","g"],
+        ["言いました","いいました","dijo (pasado) (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["花火","はなび","fuegos artificiales (Genki L11)","k"],
+        ["が","が","partícula de sujeto (Genki L3)","p"],
+        ["終わってから","おわってから","después de que terminaron — 終わる + てから (después de hacer X) (Genki L9)","g"],
+        ["、",null,null,"x"],
+        ["三人","さんにん","los tres (Genki L7)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["家","いえ","casa / hogar (Genki L2)","k"],
+        ["に",null,"partícula de destino (Genki L3)","p"],
+        ["帰りました","かえりました","regresaron — 帰る (regresar a casa) + ました (pasado) (Genki L3)","k"],
+        ["。",null,null,"x"],
+        ["メアリーさん","めありーさん","Mary (さん = honorífico)","n"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["電車","でんしゃ","tren eléctrico (Genki L6)","k"],
+        ["の",null,"partícula de posesión (Genki L1)","p"],
+        ["中","なか","interior / dentro (Genki L4)","k"],
+        ["で",null,"partícula de lugar de acción (Genki L3)","p"],
+        ["日記","にっき","diario personal (Genki L9)","k"],
+        ["に",null,"partícula de dirección (Genki L3)","p"],
+        ["こう","こう","así / de esta manera (Genki L8)","k"],
+        ["書きました","かきました","escribió — 書く + ました (pasado) (Genki L4)","k"],
+        ["。",null,null,"x"],
+      ],
+      [
+        ["「",null,null,"x"],
+        ["今日","きょう","hoy (Genki L2)","k"],
+        ["は",null,"partícula de tema (Genki L1)","p"],
+        ["人生","じんせい","vida / existencia — 人 (persona) + 生 (vivir)","k"],
+        ["で",null,"en / durante — partícula de lugar extendida al tiempo (Genki L3)","p"],
+        ["一番","いちばん","el más — superlativo (Genki L10)","k"],
+        ["楽しい","たのしい","divertido/a / agradable — adjetivo -i (Genki L5)","k"],
+        ["日","ひ","día (Genki L4)","k"],
+        ["だったかもしれない","だったかもしれない","puede que haya sido — だった (pasado informal) + かもしれない (tal vez) (Genki L12)","g"],
+        ["。",null,null,"x"],
+        ["日本","にほん","Japón","n"],
+        ["に",null,"partícula de lugar (Genki L3)","p"],
+        ["来て","きて","habiendo venido — 来る forma -te (Genki L6)","g"],
+        ["本当に","ほんとうに","de verdad / realmente (Genki L6)","k"],
+        ["よかった","よかった","fue bueno / me alegra — よかった (fue bueno/a) — expresa satisfacción retrospectiva (Genki L9)","g"],
+        ["。」",null,null,"x"],
+      ],
+    ],
+  ],
+  grammar:[
+    {point:"～たことがある / ない — experiencia pasada (L11)",
+     explain:"Forma pasada del verbo + ことがある = haber hecho algo alguna vez.\n一度も + ことがない = nunca (ni una sola vez).\nEn pasado: ことがなかった = nunca había hecho.",
+     example:"夏祭りに行ったことがありませんでした。→ Nunca había ido a un festival de verano.\nたこ焼きを食べたことがなかった。→ Nunca había comido takoyaki."},
+    {point:"～てみたい / ～てみる — querer intentar / probar (L11)",
+     explain:"Te-form + みたい = querer probar a hacer algo (por primera vez).\nTe-form + みる = probar a hacer algo para ver qué pasa.",
+     example:"やってみたいです！→ ¡Quiero probarlo!\n食べてみたいです。→ Quiero probar a comerlo."},
+    {point:"楽しみにする — esperar con ilusión (L11)",
+     explain:"楽しみ (algo a lo que esperar) + に + する → esperar con ilusión.\n楽しみにしていた = lo había estado esperando.",
+     example:"ずっと楽しみにしていました。→ Lo había estado esperando con ilusión todo este tiempo."},
+    {point:"～にくい — difícil de hacer X (L10)",
+     explain:"Stem del verbo (ます sin ます) + にくい = difícil de hacer X.\nOpuesto: やすい = fácil de hacer X.",
+     example:"浴衣は歩きにくいです。→ Con el yukata es difícil caminar."},
+    {point:"～になると / ～になる — convertirse en / llegar a ser (L10)",
+     explain:"Sustantivo + になる = llegar a ser X / convertirse en X.\n～になると = cuando llega a ser X (condicional natural).",
+     example:"夜になると、花火大会が始まりました。→ Cuando se hizo de noche, empezó el festival de fuegos."},
+    {point:"～てくれる — alguien hace algo POR ti (L12)",
+     explain:"Te-form + くれる. Otra persona hace algo en beneficio del hablante. Implica gratitud.",
+     example:"さくらさんが教えてくれました。→ Sakura me lo explicó (me hizo ese favor).\n声をかけてくれました。→ Me hablaron (me hicieron ese favor)."},
+    {point:"～たかもしれない — tal vez haya sido (L12)",
+     explain:"Forma pasada informal (だった/だったか) + かもしれない = tal vez fue / puede que haya sido.",
+     example:"人生で一番楽しい日だったかもしれない。\n→ Puede que haya sido el día más divertido de mi vida."},
+    {point:"～の (nominalización de verbos) (L8)",
+     explain:"Verbo + の = convierte el verbo en sustantivo. Permite que verbos sean sujeto/objeto de la oración.",
+     example:"浴衣を着るのが初めてでした。→ Era la primera vez que me ponía un yukata.\n(着るの = el acto de ponerse)"},
+  ],
+  quiz:[
+    {q:"¿Por qué Mary estaba emocionada antes del festival?",options:["Era su festival favorito","Nunca había ido a uno","Quería comer takoyaki","Le encantaban los tambores japoneses"],correct:1},
+    {q:"¿Qué comieron primero en el festival?",options:["Yakisoba","Algodón de azúcar","Takoyaki","Okonomiyaki"],correct:2},
+    {q:"¿Quién fue mejor en la pesca de peces de colores?",options:["Mary","Sakura","Kento","Nadie ganó"],correct:2},
+    {q:"¿Qué ropa llevaban Mary y Sakura ese día?",options:["Kimono formal","Yukata","Ropa casual","Uniforme escolar"],correct:1},
+    {q:"¿Qué escribió Mary en su diario?",options:["Que quería volver a casa","Que la comida estuvo mala","Que puede que fuera el día más divertido de su vida","Que los fuegos artificiales la asustaron"],correct:2},
+  ],
+},
+];
+
+// Init
+render();
+</script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
